@@ -21,21 +21,37 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      # This installs Gradle itself, so the build works even though this
-      # repo doesn't include a committed gradlew/gradle-wrapper.jar binary.
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
 
+      # Finds whichever folder actually contains settings.gradle.kts,
+      # no matter how deep the repo has it nested, so the build doesn't
+      # break if the project folder isn't at the exact repo root.
+      - name: Locate Gradle project directory
+        id: locate
+        run: |
+          MATCH=$(find . -maxdepth 4 -name "settings.gradle.kts" | head -n 1)
+          if [ -z "$MATCH" ]; then
+            echo "Could not find settings.gradle.kts anywhere in the repo (searched 4 levels deep)."
+            find . -maxdepth 4 -type d
+            exit 1
+          fi
+          PROJECT_DIR=$(dirname "$MATCH")
+          echo "Found Gradle project at: $PROJECT_DIR"
+          echo "project_dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
+
       - name: Grant execute permission for gradlew (if present)
+        working-directory: ${{ steps.locate.outputs.project_dir }}
         run: chmod +x ./gradlew || true
 
       - name: Build debug APK
+        working-directory: ${{ steps.locate.outputs.project_dir }}
         run: gradle assembleDebug --no-daemon
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: app-debug-apk
-          path: app/build/outputs/apk/debug/*.apk
+          path: ${{ steps.locate.outputs.project_dir }}/app/build/outputs/apk/debug/*.apk
