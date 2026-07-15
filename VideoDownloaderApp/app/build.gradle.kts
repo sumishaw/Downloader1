@@ -61,7 +61,9 @@ dependencies {
     // JSON parsing for complex script data
     implementation("com.google.code.gson:gson:2.10.1")
 
-    // Optional: For future headless browser support (commented out for now)
-    // implementation("io.github.karate-framework:karate-core:1.4.1")
-    // implementation("com.microsoft.playwright:playwright:1.40.0")
+    // Headless browser for JavaScript-heavy sites (Pexels, Vimeo, etc)
+    implementation("io.github.detekt.kotest:kotest-extensions-playwright:1.3.3")
+    
+    // WebView for rendering JavaScript content
+    implementation("androidx.webkit:webkit:1.7.0")
 }
