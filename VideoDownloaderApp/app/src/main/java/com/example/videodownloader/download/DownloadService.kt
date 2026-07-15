@@ -6,6 +6,8 @@ import android.os.Build
 import android.os.Environment
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
+import com.example.videodownloader.model.DownloadProgress
+import com.example.videodownloader.model.DownloadState
 import com.example.videodownloader.model.VideoInfo
 import kotlinx.coroutines.*
 import okhttp3.OkHttpClient
@@ -25,12 +27,24 @@ class DownloadService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val directUrl = intent?.getStringExtra(EXTRA_DIRECT_URL) ?: return START_NOT_STICKY
-        val pageUrl = intent.getStringExtra(EXTRA_PAGE_URL).orEmpty()
         val fileName = intent.getStringExtra(EXTRA_FILE_NAME) ?: "video_${System.currentTimeMillis()}.mp4"
         val totalBytes = intent.getLongExtra(EXTRA_TOTAL_BYTES, -1L).takeIf { it > 0 }
         val supportsRanges = intent.getBooleanExtra(EXTRA_SUPPORTS_RANGES, false)
+        val downloadId = fileName
 
         startForeground(NOTIFICATION_ID, buildNotification(fileName, 0))
+
+        // Let the UI know immediately - shows file size (if known) right away,
+        // before the first byte has actually been transferred.
+        DownloadProgressBus.update(
+            DownloadProgress(
+                id = downloadId,
+                fileName = fileName,
+                bytesDownloaded = 0L,
+                totalBytes = totalBytes ?: -1L,
+                state = DownloadState.DOWNLOADING
+            )
+        )
 
         scope.launch {
             val dir = getExternalFilesDir(Environment.DIRECTORY_MOVIES) ?: filesDir
@@ -44,11 +58,39 @@ class DownloadService : Service() {
             ) { downloaded, total ->
                 val percent = if (total > 0) ((downloaded * 100) / total).toInt() else 0
                 updateNotification(fileName, percent)
+                DownloadProgressBus.update(
+                    DownloadProgress(
+                        id = downloadId,
+                        fileName = fileName,
+                        bytesDownloaded = downloaded,
+                        totalBytes = total,
+                        state = DownloadState.DOWNLOADING
+                    )
+                )
             }.onSuccess {
                 showCompletionNotification(fileName, success = true)
+                DownloadProgressBus.update(
+                    DownloadProgress(
+                        id = downloadId,
+                        fileName = fileName,
+                        bytesDownloaded = totalBytes ?: destination.length(),
+                        totalBytes = totalBytes ?: destination.length(),
+                        state = DownloadState.COMPLETED
+                    )
+                )
                 stopSelf()
-            }.onFailure {
+            }.onFailure { error ->
                 showCompletionNotification(fileName, success = false)
+                DownloadProgressBus.update(
+                    DownloadProgress(
+                        id = downloadId,
+                        fileName = fileName,
+                        bytesDownloaded = 0L,
+                        totalBytes = totalBytes ?: -1L,
+                        state = DownloadState.FAILED,
+                        message = error.message
+                    )
+                )
                 stopSelf()
             }
         }
