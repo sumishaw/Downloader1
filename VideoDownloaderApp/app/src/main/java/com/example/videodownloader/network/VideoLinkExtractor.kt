@@ -175,7 +175,7 @@ class VideoLinkExtractor(private val client: OkHttpClient) {
             // Try parsing as absolute URL
             try {
                 URL(urlStr).toString()
-            } catch {
+            } catch (e2: Exception) {
                 null
             }
         }
