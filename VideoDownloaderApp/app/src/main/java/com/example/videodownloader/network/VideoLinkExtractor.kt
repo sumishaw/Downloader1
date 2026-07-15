@@ -213,7 +213,7 @@ class VideoLinkExtractor(private val client: OkHttpClient) {
         // Extract from picture sources
         doc.select("picture source").forEach { element ->
             element.attr("src").takeIf { it.isNotEmpty() }?.let { src ->
-                if (src.contains(Regex("\.(?:mp4|webm)"))) {
+                if (src.contains(Regex("\\.(?:mp4|webm)"))) {
                     resolveUrl(src, baseUrl)?.let { videos.add(it) }
                 }
             }
