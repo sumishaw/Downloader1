@@ -5,6 +5,7 @@ import okhttp3.OkHttpClient
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import java.net.URL
+import java.net.URLDecoder
 
 /**
  * Extracts video links from webpages by parsing HTML.
@@ -16,9 +17,11 @@ import java.net.URL
  * - JSON-LD structured data
  * - Data attributes
  * - Inline script URLs
+ * - JavaScript variables and object patterns
+ * - Common video platform patterns
  *
  * Note: This approach does NOT execute JavaScript. Pages that load videos
- * dynamically via React, Vue, fetch(), AJAX, etc. will not have their
+ * dynamically via React, Vue, fetch(), AJAX, etc. may not have their
  * videos extracted. For those sites, a headless browser solution is needed.
  */
 class VideoLinkExtractor(private val client: OkHttpClient) {
@@ -33,7 +36,12 @@ class VideoLinkExtractor(private val client: OkHttpClient) {
         return try {
             val request = okhttp3.Request.Builder()
                 .url(pageUrl)
-                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+                .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8")
+                .header("Accept-Language", "en-US,en;q=0.9")
+                .header("Accept-Encoding", "gzip, deflate, br")
+                .header("Referer", pageUrl)
+                .header("DNT", "1")
                 .build()
 
             val response = client.newCall(request).execute()
@@ -57,8 +65,17 @@ class VideoLinkExtractor(private val client: OkHttpClient) {
             // 3. Extract from JSON-LD structured data
             extractFromJsonLd(doc, pageUrl, videos)
 
-            // 4. Extract from data attributes and other meta tags
+            // 4. Extract from data attributes
             extractFromDataAttributes(doc, pageUrl, videos)
+
+            // 5. Extract video URLs from JavaScript code (inline scripts)
+            extractFromJavaScript(doc, pageUrl, videos)
+
+            // 6. Extract from common video platform patterns
+            extractFromCommonPatterns(doc, pageUrl, videos)
+
+            // 7. Extract from meta tags
+            extractFromMetaTags(doc, pageUrl, videos)
 
             if (videos.isEmpty()) {
                 return ExtractResult.NoneFound("No video links found on this page")
@@ -135,22 +152,113 @@ class VideoLinkExtractor(private val client: OkHttpClient) {
                     resolveUrl(src, baseUrl)?.let { videos.add(it) }
                 }
         }
+    }
 
-        // Look for video URLs in script tags (inline JS with URL strings)
-        doc.select("script:not([type])").forEach { script ->
+    private fun extractFromJavaScript(doc: Document, baseUrl: String, videos: MutableSet<String>) {
+        // Extract URLs from all script tags
+        doc.select("script").forEach { script ->
             val scriptContent = script.data()
-            // Simple pattern to find URLs in inline scripts
-            val urlPattern =
-                """(?:https?://|/)(?:[a-zA-Z0-9\-._~:/?#\[\]@!$&'()*+,;=%]+\.(?:mp4|webm|ogg|mov|mkv))""".toRegex()
-            urlPattern.findAll(scriptContent).forEach { match ->
-                val url = match.value
-                resolveUrl(url, baseUrl)?.let { videos.add(it) }
+            if (scriptContent.isEmpty()) return@forEach
+
+            // Common video URL patterns in JavaScript
+            val patterns = listOf(
+                // Direct video file URLs (mp4, webm, etc.)
+                """(?:https?:|)//[^"'\s<>]+\.(?:mp4|webm|ogg|mov|mkv|avi|flv|m3u8)(?:\?[^"'\s<>]*)?""".toRegex(),
+                // src= or url= patterns
+                """(?:src|url)\s*[:=]\s*["']([^"']+\.(?:mp4|webm|ogg|mov|mkv|avi|flv|m3u8)[^"']*)["']""".toRegex(),
+                // data-src or data-video patterns  
+                """data-(?:src|video)\s*=\s*["']([^"']+)["']""".toRegex(),
+                // "url": "..." JSON patterns
+                """"(?:url|src|videoUrl|video_url|media_url)"\s*[:=]\s*"([^"]+\.(?:mp4|webm|ogg|mov|mkv|avi|flv|m3u8)[^"]*)""".toRegex(),
+                // 'url': '...' single quote JSON patterns
+                """'(?:url|src|videoUrl|video_url|media_url)'\s*[:=]\s*'([^']+\.(?:mp4|webm|ogg|mov|mkv|avi|flv|m3u8)[^']*)""".toRegex(),
+                // HLS/DASH streams
+                """(?:https?:|)//[^"'\s<>]+\.(?:m3u8|mpd)(?:\?[^"'\s<>]*)?""".toRegex()
+            )
+
+            patterns.forEach { pattern ->
+                pattern.findAll(scriptContent).forEach { match ->
+                    val url = if (match.groupValues.size > 1 && match.groupValues[1].isNotEmpty()) {
+                        match.groupValues[1]
+                    } else {
+                        match.value
+                    }
+                    if (url.isNotEmpty() && isValidVideoUrl(url)) {
+                        resolveUrl(url, baseUrl)?.let { videos.add(it) }
+                    }
+                }
             }
         }
     }
 
+    private fun extractFromCommonPatterns(doc: Document, baseUrl: String, videos: MutableSet<String>) {
+        // Look for common video player patterns
+        doc.select("iframe, [class*='player'], [class*='video'], [class*='embed']").forEach { element ->
+            // Extract src from iframes
+            element.attr("src").takeIf { it.isNotEmpty() }?.let { src ->
+                if (isVideoPlayerUrl(src)) {
+                    resolveUrl(src, baseUrl)?.let { videos.add(it) }
+                }
+            }
+
+            // Extract data-* attributes
+            element.attributes().forEach { attr ->
+                val attrValue = attr.value
+                if (attrValue.contains(Regex("(?:mp4|webm|ogg|mov|mkv|avi|flv|m3u8)"))) {
+                    resolveUrl(attrValue, baseUrl)?.let { videos.add(it) }
+                }
+            }
+        }
+
+        // Extract from picture sources
+        doc.select("picture source").forEach { element ->
+            element.attr("src").takeIf { it.isNotEmpty() }?.let { src ->
+                if (src.contains(Regex("\.(?:mp4|webm)"))) {
+                    resolveUrl(src, baseUrl)?.let { videos.add(it) }
+                }
+            }
+        }
+    }
+
+    private fun extractFromMetaTags(doc: Document, baseUrl: String, videos: MutableSet<String>) {
+        // Extract from various meta tags that might contain video URLs
+        doc.select("meta[name=video], meta[name=video-url], meta[property=video], meta[property=video-url]")
+            .forEach { element ->
+                element.attr("content").takeIf { it.isNotEmpty() }?.let { url ->
+                    resolveUrl(url, baseUrl)?.let { videos.add(it) }
+                }
+            }
+    }
+
+    private fun isValidVideoUrl(url: String): Boolean {
+        val videoExtensions = listOf("mp4", "webm", "ogg", "mov", "mkv", "avi", "flv", "m3u8", "mpd")
+        return videoExtensions.any { url.contains(".$it", ignoreCase = true) }
+    }
+
+    private fun isVideoPlayerUrl(url: String): Boolean {
+        // Common video platform domains
+        val videoPlatforms = listOf(
+            "youtube.com", "youtu.be",
+            "vimeo.com",
+            "dailymotion.com",
+            "twitter.com", "x.com",
+            "facebook.com",
+            "instagram.com",
+            "tiktok.com",
+            "twitch.tv",
+            "rumble.com",
+            "bitchute.com"
+        )
+        return videoPlatforms.any { url.contains(it) }
+    }
+
     private fun tryCreateVideoInfo(url: String, pageUrl: String): VideoInfo? {
         return try {
+            // Skip invalid URLs
+            if (!isValidVideoUrl(url) && !isVideoPlayerUrl(url)) {
+                return null
+            }
+
             val fileName = extractFileName(url)
             val mimeType = guessMimeType(url)
 
@@ -169,7 +277,15 @@ class VideoLinkExtractor(private val client: OkHttpClient) {
 
     private fun resolveUrl(urlStr: String, baseUrl: String): String? {
         return try {
-            val url = URL(baseUrl).toURI().resolve(urlStr).toURL()
+            // Handle URL encoding/decoding
+            val decodedUrl = try {
+                URLDecoder.decode(urlStr, "UTF-8")
+            } catch (e: Exception) {
+                urlStr
+            }
+
+            // Try to resolve relative URLs
+            val url = URL(baseUrl).toURI().resolve(decodedUrl).toURL()
             url.toString()
         } catch (e: Exception) {
             // Try parsing as absolute URL
@@ -182,8 +298,10 @@ class VideoLinkExtractor(private val client: OkHttpClient) {
     }
 
     private fun extractFileName(url: String): String {
-        val fileName = url.substringAfterLast("/")
-            .substringBefore("?")
+        val cleanUrl = url.substringBefore("?")
+            .substringBefore("#")
+
+        val fileName = cleanUrl.substringAfterLast("/")
             .takeIf { it.isNotEmpty() }
             ?: "video_${System.currentTimeMillis()}"
 
@@ -201,6 +319,10 @@ class VideoLinkExtractor(private val client: OkHttpClient) {
             url.contains(".ogg", ignoreCase = true) -> "video/ogg"
             url.contains(".mov", ignoreCase = true) -> "video/quicktime"
             url.contains(".mkv", ignoreCase = true) -> "video/x-matroska"
+            url.contains(".avi", ignoreCase = true) -> "video/x-msvideo"
+            url.contains(".flv", ignoreCase = true) -> "video/x-flv"
+            url.contains(".m3u8", ignoreCase = true) -> "application/x-mpegURL"
+            url.contains(".mpd", ignoreCase = true) -> "application/dash+xml"
             else -> null
         }
     }
