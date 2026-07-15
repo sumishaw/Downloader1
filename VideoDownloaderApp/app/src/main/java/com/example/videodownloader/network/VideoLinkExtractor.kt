@@ -16,7 +16,12 @@ sealed class ExtractResult {
 
 
 class VideoLinkExtractor(private val client: OkHttpClient) {
-
+fun extract(pageUrl: String): ExtractResult {
+    val html = fetchHtml(pageUrl) ?: return ExtractResult.NoneFound(
+        "Unable to fetch the page. Check the URL or your internet connection."
+    )
+    return extractVideos(pageUrl, html)
+}
         fun extractVideos(pageUrl: String, html: String): ExtractResult {
         val doc = Jsoup.parse(html, pageUrl)
         val found = LinkedHashSet<String>()
