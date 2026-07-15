@@ -4,6 +4,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.jsoup.Jsoup
 import java.net.URI
+import java.util.regex.Pattern
 
 // Add this to your project, either in the same file or in a separate file
 // (e.g., com.example.videodownloader.model.ExtractResult)
@@ -13,8 +14,29 @@ sealed class ExtractResult {
     data class NoneFound(val message: String) : ExtractResult()
 }
 
-
+ /**
+ 
+ * Looks for videos that a page serves openly, digging past the obvious
+ * <video>/<source> tags to also catch links buried in JSON-LD metadata,
+ * data-* player attributes, and inline <script> blocks. Still does NOT
+ * execute JavaScript, reverse-engineer player logic, decrypt signed URLs,
+ * or use any platform-private API - if a site only loads its real video
+ * via an async JS network call with nothing in the initial HTML, this
+ * won't find it, by design.
+ */6
 class VideoLinkExtractor(private val client: OkHttpClient) {
+ 
+    // Broad set of common single-file video extensions.
+    private val extensionPattern =
+        "(mp4|webm|mov|mkv|avi|flv|wmv|3gp|m3u8|ts)"
+
+    // Matches a quoted URL (in HTML attributes or inline <script> JSON/JS)
+    // ending in one of the extensions above, optionally with a query string.
+    private val urlInTextRegex = Pattern.compile(
+        "https?://[^\"'\\s<>]+?\\.$extensionPattern(\\?[^\"'\\s<>]*)?",
+        Pattern.CASE_INSENSITIVE
+    )
+
 fun extract(pageUrl: String): ExtractResult {
     val html = fetchHtml(pageUrl) ?: return ExtractResult.NoneFound(
         "Unable to fetch the page. Check the URL or your internet connection."
@@ -25,23 +47,73 @@ fun extract(pageUrl: String): ExtractResult {
         val doc = Jsoup.parse(html, pageUrl)
         val found = LinkedHashSet<String>()
 
-        // <video src="...">
+        // Standard HTML5 video markup.
         doc.select("video[src]").forEach { found.add(it.attr("abs:src")) }
-        // <video><source src="..."></video>
+        
         doc.select("video source[src]").forEach { found.add(it.attr("abs:src")) }
-        // <meta property="og:video" content="...">
-        doc.select("meta[property=og:video], meta[property=og:video:url], meta[property=og:video:secure_url]")
-            .forEach { found.add(it.attr("abs:content")) }
-        // Direct <a> links to common video file types
-        doc.select("a[href~=(?i)\\.(mp4|webm|mov|m3u8)(\\?.*)?$]")
-            .forEach { found.add(it.attr("abs:href")) }
+        
+        
+       
+        // Open Graph / link-rel video hints.
+        doc.select(
+            "meta[property=og:video], meta[property=og:video:url], " +
+                "meta[property=og:video:secure_url], link[rel=video_src]"
+        ).forEach {
+            val url = it.attr("abs:content").ifBlank { it.attr("abs:href") }
+            if (url.isNotBlank()) found.add(url)
+        }
+
+        // Player libraries often stash the real source in a data-* attribute
+        // (data-src, data-file, data-video, data-mp4, data-hd, etc.) rather
+        // than the visible src, especially when a small preview plays first.
+        doc.select("[data-src], [data-file], [data-video], [data-mp4], [data-hd], [data-source]")
+            .forEach { el ->
+                for (attrName in listOf("data-src", "data-file", "data-video", "data-mp4", "data-hd", "data-source")) {
+                    val url = el.attr("abs:$attrName")
+                    if (url.isNotBlank()) found.add(url)
+                }
+            }
+
+        // Direct <a> links to video files.
+        doc.select("a[href~=(?i)\\.$extensionPattern(\\?.*)?$]")
+             .forEach { found.add(it.attr("abs:href")) }
+ 
+        // JSON-LD structured data (schema.org VideoObject) - many video
+        // pages include this for SEO with a contentUrl/embedUrl pointing at
+        // the real, full video file, separate from the visible preview.
+        doc.select("script[type=application/ld+json]").forEach { script ->
+            extractJsonLdVideoUrls(script.data()).forEach { found.add(resolve(pageUrl, it)) }
+        }
+
+        // Broad sweep: any quoted video-file URL sitting inside inline
+        // <script> blocks (player configs, embedded JSON state, etc.) that
+        // the tag-based checks above wouldn't catch.
+        doc.select("script").forEach { script ->
+            val matcher = urlInTextRegex.matcher(script.data())
+            while (matcher.find()) {
+                found.add(matcher.group())
+            }
+        }
+
 
         val cleaned = found.filter { it.isNotBlank() }
         if (cleaned.isEmpty()) {
             return ExtractResult.NoneFound(
-                "No openly-served video file was found on this page. If the site plays " +
-                    "video through a private/streaming player without a direct file link, " +
-                    "this app intentionally won't try to extract it."
+                +                "No openly-served video file was found on this page, even after checking " +
+                    "structured data and inline scripts. If the site loads its real video " +
+                    "only through a JavaScript network call after the page renders, this " +
+                    "app can't see it without executing that JavaScript, which it " +
+                    "intentionally doesn't do."
+             )
+         }
+ 
+        // Probe every candidate and rank by file size, largest first - the
+        // real video is virtually always much bigger than a preview/teaser
+        // clip, so this surfaces the right one at the top instead of
+        // whichever tag happened to appear first in the HTML.
+         val videos = cleaned.mapNotNull { url -> probeVideo(pageUrl, url) }
+            .sortedByDescending { it.sizeBytes ?: -1L }
+
             )
         }
 
@@ -51,6 +123,23 @@ fun extract(pageUrl: String): ExtractResult {
         } else {
             ExtractResult.Found(videos)
         }
+    }
+
+    private fun extractJsonLdVideoUrls(json: String): List<String> {
+        val keys = listOf("contentUrl", "embedUrl")
+        val results = mutableListOf<String>()
+        for (key in keys) {
+            val pattern = Pattern.compile("\"$key\"\\s*:\\s*\"([^\"]+)\"")
+            val matcher = pattern.matcher(json)
+            while (matcher.find()) {
+                results.add(matcher.group(1))
+            }
+        }
+        return results
+    }
+
+    private fun resolve(pageUrl: String, maybeRelative: String): String {
+        return runCatching { URI(pageUrl).resolve(maybeRelative).toString() }.getOrDefault(maybeRelative)
     }
 
     private fun fetchHtml(url: String): String? {
