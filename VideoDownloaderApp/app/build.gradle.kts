@@ -56,4 +56,12 @@ dependencies {
 
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+
+    // Additional dependencies for enhanced video extraction
+    // JSON parsing for complex script data
+    implementation("com.google.code.gson:gson:2.10.1")
+
+    // Optional: For future headless browser support (commented out for now)
+    // implementation("io.github.karate-framework:karate-core:1.4.1")
+    // implementation("com.microsoft.playwright:playwright:1.40.0")
 }
