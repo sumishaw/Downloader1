@@ -138,7 +138,7 @@ private fun DownloadProgressCard(progress: DownloadProgress, onDismiss: () -> Un
                 }
                 DownloadState.COMPLETED -> {
                     Text(
-                        "Download complete \u2013 ${formatBytes(progress.totalBytes)} saved to " +
+                        "Download complete – ${formatBytes(progress.totalBytes)} saved to " +
                             "Movies/VideoDownloader (visible in your Gallery/Files app)",
                         style = MaterialTheme.typography.bodyMedium
                     )
@@ -149,9 +149,6 @@ private fun DownloadProgressCard(progress: DownloadProgress, onDismiss: () -> Un
                         color = MaterialTheme.colorScheme.error,
                         style = MaterialTheme.typography.bodyMedium
                     )
-                }
-                DownloadState.PAUSED, DownloadState.NOT_ALLOWED -> {
-                    Text(progress.message ?: progress.state.name, style = MaterialTheme.typography.bodySmall)
                 }
             }
         }
