@@ -36,15 +36,16 @@ class DownloadViewModel(app: Application) : AndroidViewModel(app) {
     val state: StateFlow<UiState> = _state.asStateFlow()
 
     fun checkUrl(pageUrl: String) {
-        _state.value = UiState.Loading
-        viewModelScope.launch {
-            val result = withContext(Dispatchers.IO) { extractor.extract(pageUrl.trim()) }
-            _state.value = when (result) {
-                is ExtractResult.Found -> UiState.Found(result.videos)
-                is ExtractResult.NoneFound -> UiState.NoneFound(result.reason)
-            }
+    _state.value = UiState.Loading
+    viewModelScope.launch {
+        val result = withContext(Dispatchers.IO) { extractor.extract(pageUrl.trim()) }
+        _state.value = when (result) {
+            is ExtractResult.Found -> UiState.Found(result.videos)
+            is ExtractResult.NoneFound -> UiState.NoneFound(result.reason)
+            else -> UiState.NoneFound("Unknown error occurred")
         }
     }
+}
 
     fun startDownload(video: VideoInfo) {
         DownloadService.start(getApplication(), video)
