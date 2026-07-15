@@ -138,7 +138,8 @@ private fun DownloadProgressCard(progress: DownloadProgress, onDismiss: () -> Un
                 }
                 DownloadState.COMPLETED -> {
                     Text(
-                        "Download complete \u2013 ${formatBytes(progress.totalBytes)} saved to the Movies folder",
+                        "Download complete \u2013 ${formatBytes(progress.totalBytes)} saved to " +
+                            "Movies/VideoDownloader (visible in your Gallery/Files app)",
                         style = MaterialTheme.typography.bodyMedium
                     )
                 }
