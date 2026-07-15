@@ -42,7 +42,7 @@ class DownloadViewModel(app: Application) : AndroidViewModel(app) {
         val result = withContext(Dispatchers.IO) { extractor.extract(pageUrl.trim()) }
         _state.value = when (result) {
             is ExtractResult.Found -> UiState.Found(result.videos)
-            is ExtractResult.NoneFound -> UiState.NoneFound(result.reason)  // Change 'reason' to match the actual property
+            is ExtractResult.NoneFound -> UiState.NoneFound(result.message)
             else -> UiState.NoneFound("Unknown error occurred")
         }
     }
