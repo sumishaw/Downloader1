@@ -3,7 +3,6 @@ package com.example.videodownloader.download
 import android.app.*
 import android.content.Intent
 import android.os.Build
-import android.os.Environment
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import com.example.videodownloader.model.DownloadProgress
@@ -28,6 +27,7 @@ class DownloadService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val directUrl = intent?.getStringExtra(EXTRA_DIRECT_URL) ?: return START_NOT_STICKY
         val fileName = intent.getStringExtra(EXTRA_FILE_NAME) ?: "video_${System.currentTimeMillis()}.mp4"
+        val mimeType = intent.getStringExtra(EXTRA_MIME_TYPE)
         val totalBytes = intent.getLongExtra(EXTRA_TOTAL_BYTES, -1L).takeIf { it > 0 }
         val supportsRanges = intent.getBooleanExtra(EXTRA_SUPPORTS_RANGES, false)
         val downloadId = fileName
@@ -47,12 +47,14 @@ class DownloadService : Service() {
         )
 
         scope.launch {
-            val dir = getExternalFilesDir(Environment.DIRECTORY_MOVIES) ?: filesDir
-            val destination = File(dir, fileName)
+            // Download into a private staging file first (fast parallel
+            // range-writes need random file access, which a MediaStore
+            // content Uri doesn't support directly).
+            val stagingFile = File(cacheDir, "staging_$fileName")
 
             downloader.download(
                 url = directUrl,
-                destination = destination,
+                destination = stagingFile,
                 totalBytes = totalBytes,
                 supportsRanges = supportsRanges
             ) { downloaded, total ->
@@ -67,19 +69,31 @@ class DownloadService : Service() {
                         state = DownloadState.DOWNLOADING
                     )
                 )
-            }.onSuccess {
-                showCompletionNotification(fileName, success = true)
+            }.onSuccess { finishedFile ->
+                // Move the finished file out of private staging into the
+                // phone's shared Movies collection so it's actually visible
+                // in Gallery/Files, not just inside this app's sandbox.
+                val published = MediaStoreHelper.publishVideo(
+                    context = applicationContext,
+                    sourceFile = finishedFile,
+                    displayName = fileName,
+                    mimeType = mimeType
+                )
+
+                showCompletionNotification(fileName, success = published)
                 DownloadProgressBus.update(
                     DownloadProgress(
                         id = downloadId,
                         fileName = fileName,
-                        bytesDownloaded = totalBytes ?: destination.length(),
-                        totalBytes = totalBytes ?: destination.length(),
-                        state = DownloadState.COMPLETED
+                        bytesDownloaded = totalBytes ?: finishedFile.length(),
+                        totalBytes = totalBytes ?: finishedFile.length(),
+                        state = if (published) DownloadState.COMPLETED else DownloadState.FAILED,
+                        message = if (published) null else "Could not save to the shared Movies folder"
                     )
                 )
                 stopSelf()
             }.onFailure { error ->
+                stagingFile.delete()
                 showCompletionNotification(fileName, success = false)
                 DownloadProgressBus.update(
                     DownloadProgress(
@@ -122,7 +136,9 @@ class DownloadService : Service() {
         ensureChannel()
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle(if (success) "Download complete" else "Download failed")
-            .setContentText(fileName)
+            .setContentText(
+                if (success) "Saved to Movies/VideoDownloader - $fileName" else fileName
+            )
             .setSmallIcon(android.R.drawable.stat_sys_download_done)
             .setOngoing(false)
             .build()
@@ -143,6 +159,7 @@ class DownloadService : Service() {
         const val EXTRA_DIRECT_URL = "extra_direct_url"
         const val EXTRA_PAGE_URL = "extra_page_url"
         const val EXTRA_FILE_NAME = "extra_file_name"
+        const val EXTRA_MIME_TYPE = "extra_mime_type"
         const val EXTRA_TOTAL_BYTES = "extra_total_bytes"
         const val EXTRA_SUPPORTS_RANGES = "extra_supports_ranges"
 
@@ -154,6 +171,7 @@ class DownloadService : Service() {
                 putExtra(EXTRA_DIRECT_URL, video.directUrl)
                 putExtra(EXTRA_PAGE_URL, video.pageUrl)
                 putExtra(EXTRA_FILE_NAME, video.suggestedFileName)
+                putExtra(EXTRA_MIME_TYPE, video.mimeType)
                 putExtra(EXTRA_TOTAL_BYTES, video.sizeBytes ?: -1L)
                 putExtra(EXTRA_SUPPORTS_RANGES, video.supportsRangeRequests)
             }
