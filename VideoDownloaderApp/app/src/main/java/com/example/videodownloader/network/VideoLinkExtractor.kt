@@ -1,10 +1,18 @@
 package com.example.videodownloader.network
-
 import com.example.videodownloader.model.VideoInfo
+import com.example.videodownloader.model.ExtractResult
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.jsoup.Jsoup
 import java.net.URI
+
+// Add this to your project, either in the same file or in a separate file
+// (e.g., com.example.videodownloader.model.ExtractResult)
+
+sealed class ExtractResult {
+    data class Found(val videos: List<VideoInfo>) : ExtractResult()
+    data class NoneFound(val message: String) : ExtractResult()
+}
 
 
 class VideoLinkExtractor(private val client: OkHttpClient) {
