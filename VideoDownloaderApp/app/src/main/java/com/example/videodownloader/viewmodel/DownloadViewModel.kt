@@ -20,6 +20,7 @@ sealed class UiState {
     object Idle : UiState()
     object Loading : UiState()
     data class Found(val videos: List<VideoInfo>) : UiState()
+    data class Blocked(val reason: String) : UiState()
     data class NoneFound(val reason: String) : UiState()
     data class DownloadStarted(val fileName: String) : UiState()
 }
