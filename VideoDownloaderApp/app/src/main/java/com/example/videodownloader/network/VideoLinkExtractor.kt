@@ -1,6 +1,5 @@
 package com.example.videodownloader.network
 import com.example.videodownloader.model.VideoInfo
-import com.example.videodownloader.model.ExtractResult
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.jsoup.Jsoup
