@@ -23,8 +23,6 @@ object DownloadPolicy {
     // Domains whose ToS explicitly disallow third-party downloading of
     // their hosted video. Extend this list as needed.
     private val disallowedDomains = setOf(
-        "youtube.com", "youtu.be",
-        "facebook.com", "fb.watch",
         "instagram.com",
         "tiktok.com",
         "twitter.com", "x.com",
