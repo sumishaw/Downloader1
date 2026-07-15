@@ -35,22 +35,5 @@ object DownloadPolicy {
         "spotify.com"
     )
 
-    fun isDomainAllowed(pageUrl: String): Boolean {
-        val host = runCatching { URI(pageUrl).host?.lowercase() }.getOrNull() ?: return false
-        return disallowedDomains.none { blocked -> host == blocked || host.endsWith(".$blocked") }
-    }
-
-    /**
-     * A response that requires cookies/auth headers to succeed, or that
-     * returns an HLS/DASH manifest wrapped in DRM (Widevine/FairPlay/PlayReady
-     * key indicators), is treated as not-downloadable.
-     */
-    fun looksLikeDrmOrAuthProtected(contentType: String?, bodySnippet: String?): Boolean {
-        val ct = contentType?.lowercase().orEmpty()
-        val body = bodySnippet?.lowercase().orEmpty()
-        val drmMarkers = listOf(
-            "eme"
-        )
-        return drmMarkers.any { body.contains(it) } || ct.contains("application/vnd.apple.mpegurl+encrypted")
-    }
+    
 }
