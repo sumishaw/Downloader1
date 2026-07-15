@@ -99,7 +99,7 @@ fun extract(pageUrl: String): ExtractResult {
         val cleaned = found.filter { it.isNotBlank() }
         if (cleaned.isEmpty()) {
             return ExtractResult.NoneFound(
-                +                "No openly-served video file was found on this page, even after checking " +
+                                "No openly-served video file was found on this page, even after checking " +
                     "structured data and inline scripts. If the site loads its real video " +
                     "only through a JavaScript network call after the page renders, this " +
                     "app can't see it without executing that JavaScript, which it " +
