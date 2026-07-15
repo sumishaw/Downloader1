@@ -9,8 +9,7 @@ import java.net.URI
 
 class VideoLinkExtractor(private val client: OkHttpClient) {
 
-    
-
+        fun extractVideos(pageUrl: String, html: String): ExtractResult {
         val doc = Jsoup.parse(html, pageUrl)
         val found = LinkedHashSet<String>()
 
