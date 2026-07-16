@@ -34,6 +34,14 @@ class VideoLinkExtractor(private val client: OkHttpClient) {
      */
     suspend fun extract(pageUrl: String): ExtractResult {
         return try {
+            // First, check if the domain is allowed by download policy
+            if (!DownloadPolicy.isDomainAllowed(pageUrl)) {
+                return ExtractResult.Blocked(
+                    "This site's Terms of Service do not allow downloading its videos, " +
+                        "so this app won't extract from it."
+                )
+            }
+
             val request = okhttp3.Request.Builder()
                 .url(pageUrl)
                 .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
@@ -52,6 +60,11 @@ class VideoLinkExtractor(private val client: OkHttpClient) {
 
             val html = response.body?.string()
                 ?: return ExtractResult.NoneFound("Empty response body")
+
+            // Check if the response looks like it's DRM-protected or requires authentication
+            if (DownloadPolicy.looksLikeDrmOrAuthProtected(response.header("Content-Type"), html)) {
+                return ExtractResult.Blocked("This video appears to be DRM-protected or requires login.")
+            }
 
             val doc = Jsoup.parse(html, pageUrl)
             val videos = mutableSetOf<String>() // Use set to avoid duplicates
