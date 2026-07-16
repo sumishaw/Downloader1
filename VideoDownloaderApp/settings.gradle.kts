@@ -3,6 +3,8 @@ pluginManagement {
         google()
         mavenCentral()
         gradlePluginPortal()
+        // JitPack hosts some community artifacts (e.g. GitHub packages built via JitPack)
+        maven("https://jitpack.io")
     }
 }
 dependencyResolutionManagement {
@@ -10,6 +12,8 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
+        // Added JitPack so the kotest-playwright extension (if published there) can be resolved.
+        maven("https://jitpack.io")
     }
 }
 

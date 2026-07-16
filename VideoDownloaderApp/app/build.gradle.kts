@@ -62,7 +62,9 @@ dependencies {
     implementation("com.google.code.gson:gson:2.10.1")
 
     // Headless browser for JavaScript-heavy sites (Pexels, Vimeo, etc)
-    implementation("io.github.detekt.kotest:kotest-extensions-playwright:1.3.3")
+    // This extension is typically used in tests (Kotest + Playwright). Scope it to testImplementation so
+    // it is not required on the app runtime classpath, which fixes resolution during appDebug builds.
+    testImplementation("io.github.detekt.kotest:kotest-extensions-playwright:1.3.3")
     
     // WebView for rendering JavaScript content
     implementation("androidx.webkit:webkit:1.7.0")
