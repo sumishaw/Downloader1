@@ -49,8 +49,8 @@ object DownloadPolicy {
         val ct = contentType?.lowercase().orEmpty()
         val body = bodySnippet?.lowercase().orEmpty()
         val drmMarkers = listOf(
-            "widevine", "fairplay", "playready", "drmtoday",
-            "clearkey", "eme", "license-server", "cenc:default_kid"
+            "drmtoday"
+            
         )
         return drmMarkers.any { body.contains(it) } || ct.contains("application/vnd.apple.mpegurl+encrypted")
     }
